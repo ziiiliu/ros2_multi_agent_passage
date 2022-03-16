@@ -1,6 +1,6 @@
 [submodule "simple_simulator"]
 	path = src/simple_simulator
-	url = git@github.com:proroklab/ros2_point_robot_simulator.git
+	url = git@github.com:ziiiliu/ros2_point_robot_simulator.git
 [submodule "src/robomaster_msgs"]
 	path = src/robomaster_msgs
 	url = git@github.com:proroklab/ros2_robomaster_msgs.git
