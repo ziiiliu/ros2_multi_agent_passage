@@ -26,8 +26,8 @@ def generate_launch_description():
             Node(
                 package="simple_simulator",
                 namespace="/sim",
-                executable="robomaster",
-                name="simulation",
+                executable="nn_robomaster",
+                name="nn_simulation",
                 parameters=[sim_params],
             ),
             Node(

@@ -7,10 +7,10 @@ from launch.actions import GroupAction, IncludeLaunchDescription
 def generate_launch_description():
     uuids = [
         "robomaster_0",
-        "robomaster_1",
-        "robomaster_2",
-        "robomaster_3",
-        "robomaster_4",
+        # "robomaster_1",
+        # "robomaster_2",
+        # "robomaster_3",
+        # "robomaster_4",
     ]
     ld = []
     for uuid in uuids:
