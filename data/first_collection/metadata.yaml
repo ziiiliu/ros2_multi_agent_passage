@@ -1,0 +1,25 @@
+rosbag2_bagfile_information:
+  version: 4
+  storage_identifier: sqlite3
+  relative_file_paths:
+    - first_collection_0.db3
+  duration:
+    nanoseconds: 307244438141
+  starting_time:
+    nanoseconds_since_epoch: 1647446722174215334
+  message_count: 55459
+  topics_with_message_count:
+    - topic_metadata:
+        name: /robomaster_0/current_state
+        type: freyja_msgs/msg/CurrentState
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 55305
+    - topic_metadata:
+        name: /robomaster_0/reference_state
+        type: freyja_msgs/msg/ReferenceState
+        serialization_format: cdr
+        offered_qos_profiles: ""
+      message_count: 154
+  compression_format: ""
+  compression_mode: ""
