@@ -1,5 +1,6 @@
 import argparse
 import random
+import numpy as np
 import subprocess
 import rclpy
 from rclpy.node import Node
@@ -17,22 +18,42 @@ class CmdvelPublisher2D(Node):
         # The subscriber subscribes to the Freyja state estimator to obtain information about current positions
         # for collision avoidance with the boundaries
         self.subscriber = self.create_subscription(CurrentState, '/robomaster_0/current_state', self.listener_callback, 10)
-        self.timer_period = 2  # seconds
+        self.timer_period = 0.01  # seconds
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
+        # Counter for each iteration of timer_callback. Zeroed after each reference state change
         self.i = 0
         self.x_vel = random.uniform(-max_vel, max_vel)
         self.z_angle = random.uniform(-max_vel, max_vel)
         self.bound_len = 3
+
         # Needs to change this when the starting position is far different.
         self.cur_pos = [2,-2, 0]
+        # A random interval before the reference state changes. 
+        self.rand_interval = 0
+        # The period of uncertainty evaluations
+        self.eval_period = 50000
 
     # Checking whether the passed reference velocities will cause a clash with the "walls"
     # with separation of self.bound_len * 2
+
+    def will_collide(self, vel, pos, dt):
+
+        return pos[0] + vel * dt > self.bound_len or pos[0] + vel * dt < - self.bound_len
+
     def _avoid_collision(self, x_vel, y_vel, pos, dt):
-        if pos[0] + x_vel * dt > self.bound_len or pos[0] + x_vel * dt < - self.bound_len:
+        if self.will_collide(x_vel, pos[0], dt):
             x_vel = -x_vel
-        if pos[1] + y_vel * dt > self.bound_len or pos[1] + y_vel * dt < - self.bound_len:
+            if self.will_collide(x_vel, pos[0], dt):
+                x_vel *= 0.5
+                if self.will_collide(x_vel, pos[0], dt):
+                    x_vel *= 0.5
+        
+        if self.will_collide(y_vel, pos[1], dt):
             y_vel = -y_vel
+            if self.will_collide(y_vel, pos[1], dt):
+                y_vel *= 0.5
+                if self.will_collide(y_vel, pos[1], dt):
+                    y_vel *= 0.5
         return x_vel, y_vel
     
     def listener_callback(self, cur_state_msg):
@@ -41,19 +62,39 @@ class CmdvelPublisher2D(Node):
         self.cur_pos = cur_state_msg.state_vector[:3]
 
     def timer_callback(self):
-        self.x_vel = random.uniform(-max_vel, max_vel)
-        self.y_vel = random.uniform(-max_vel, max_vel)
-        self.x_vel, self.y_vel = self._avoid_collision(self.x_vel, self.y_vel, self.cur_pos, self.timer_period)
-        self.z_angle = random.uniform(-max_angle, max_angle)
-        # x_vel=0.2
-        msg = ReferenceState(vn=self.x_vel, ve=self.y_vel)
-        self.publisher_.publish(msg)
-        self.get_logger().info('Publishing: "%s"' % msg)
-        self.i += 1
+        if self.i >= self.rand_interval:
+
+            # reset counter and threshold
+            self.i = 0
+            self.rand_interval = self.set_rand_interval()
+
+            self.x_vel = random.uniform(-max_vel, max_vel)
+            self.y_vel = random.uniform(-max_vel, max_vel)
+            self.x_vel, self.y_vel = self._avoid_collision(self.x_vel, self.y_vel, self.cur_pos, dt=self.rand_interval*self.timer_period)
+            self.z_angle = random.uniform(-max_angle, max_angle)
+            # x_vel=0.2
+            
+            msg = ReferenceState(vn=self.x_vel, ve=self.y_vel)
+            self.publisher_.publish(msg)
+            self.get_logger().info('Publishing: "%s"' % msg)
+
+        else:
+            self.i += 1
 
     def reset_vel(self):
         stop_msg = ReferenceState()
         self.publisher_.publish(stop_msg)
+    
+    def set_rand_interval(self, seed=42, dist="uniform", lower=50, upper=200):
+        if dist == "uniform":
+            return np.random.randint(low=lower, high=upper)
+        elif dist == "gaussian":
+            return np.round(np.random.normal(loc=(lower+upper)//2, scale=30))
+        else:
+            raise ValueError("Distribution type unknown")
+
+    
+    
 
 def main():
 
