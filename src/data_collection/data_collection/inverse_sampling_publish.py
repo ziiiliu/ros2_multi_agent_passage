@@ -29,7 +29,7 @@ class InversePublisher2D(Node):
         self.x_vel = random.uniform(-max_vel, max_vel)
         self.z_angle = random.uniform(-max_vel, max_vel)
         self.bound_len = 3
-        self.inverse_sample_period = 50000
+        self.inverse_sample_period = 1000
 
         # Needs to change this when the starting position is far different.
         self.cur_pos = [2,-2, 0]
@@ -39,13 +39,16 @@ class InversePublisher2D(Node):
         self.eval_period = 50000
         # all collected instances
         self.collected_x, self.collected_y = [], []
+        # Initialising sampling distributions
+        self.x_prob_dist_inv = None
+        self.y_prob_dist_inv = None
 
     # Checking whether the passed reference velocities will cause a clash with the "walls"
     # with separation of self.bound_len * 2
 
     def will_collide(self, vel, pos, dt):
 
-        return pos[0] + vel * dt > self.bound_len or pos[0] + vel * dt < - self.bound_len
+        return pos + vel * dt > self.bound_len or pos + vel * dt < - self.bound_len
 
     def _avoid_collision(self, x_vel, y_vel, pos, dt):
         if self.will_collide(x_vel, pos[0], dt):
@@ -76,25 +79,32 @@ class InversePublisher2D(Node):
             self.y_bins, self.y_prob_dist_inv = self.inverse_sample(self.collected_y, plot=False)
             self.bin_size = self.x_bins[1] - self.x_bins[0]
 
+            self.get_logger().info("Inverse sampling invoked, x_inv: %s" % self.x_prob_dist_inv)
+
         if self.i >= self.rand_interval:
             # reset counter and threshold
             self.i = 0
             self.rand_interval = self.set_rand_interval()
-
-            x_vel_ind = np.random.choice(range(len(self.x_prob_dist_inv)), p=self.x_prob_dist_inv)
-            self.x_vel = self.x_bins[x_vel_ind] + np.random.random() * self.bin_size
-            y_vel_ind = np.random.choice(range(len(self.y_prob_dist_inv)), p=self.y_prob_dist_inv)
-            self.y_vel = self.y_bins[y_vel_ind] + np.random.random() * self.bin_size
-
+            if self.x_prob_dist_inv is not None:
+                x_vel_ind = np.random.choice(range(len(self.x_prob_dist_inv)), p=self.x_prob_dist_inv)
+                self.x_vel = self.x_bins[x_vel_ind] + np.random.random() * self.bin_size
+                y_vel_ind = np.random.choice(range(len(self.y_prob_dist_inv)), p=self.y_prob_dist_inv)
+                self.y_vel = self.y_bins[y_vel_ind] + np.random.random() * self.bin_size
+            else:
+                self.x_vel = random.uniform(-max_vel, max_vel)
+                self.y_vel = random.uniform(-max_vel, max_vel)
             self.x_vel, self.y_vel = self._avoid_collision(self.x_vel, self.y_vel, self.cur_pos, dt=self.rand_interval*self.timer_period)
             self.z_angle = random.uniform(-max_angle, max_angle)
-            
+
+            self.collected_x.append(self.x_vel)
+            self.collected_y.append(self.y_vel)
             msg = ReferenceState(vn=self.x_vel, ve=self.y_vel)
             self.publisher_.publish(msg)
             self.get_logger().info('Publishing: "%s"' % msg)
 
         else:
             self.i += 1
+        self.j += 1
 
     def reset_vel(self):
         stop_msg = ReferenceState()
@@ -112,7 +122,7 @@ class InversePublisher2D(Node):
         bins = np.linspace(-max_val, max_val, num_bins)
         counts, bins, bars = plt.hist(cur_samples, bins)
         # print(counts, bins)
-        
+        counts += 1
         size = len(cur_samples)
         prob_dist_cur = counts / size
         prob_dist_inv = (1 / prob_dist_cur) / sum(1/prob_dist_cur)

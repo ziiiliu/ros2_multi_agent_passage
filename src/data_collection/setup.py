@@ -22,7 +22,7 @@ setup(
         'console_scripts': [
             "publish_reference_state = data_collection.publish_reference_state:main",
             "publish_reference_state_inverse = data_collection.inverse_sampling_publish:main",
-            "publish_referenec_state_active = data_collection.active_sampling_publish:main",
+            "publish_reference_state_active = data_collection.active_sampling_publish:main",
         ],
     },
 )
