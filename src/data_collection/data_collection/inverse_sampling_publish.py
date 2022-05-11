@@ -132,8 +132,6 @@ class InversePublisher2D(Node):
             plt.show()
         return bins[:-1], prob_dist_inv
 
-    
-    
 
 def main():
 
