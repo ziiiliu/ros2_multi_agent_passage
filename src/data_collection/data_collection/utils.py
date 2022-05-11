@@ -61,7 +61,7 @@ def train_differential(model, X_train, y_train, X_val, y_val,
     #     scheduler.step()
         if epoch % 10 == 0 and writer is not None:
             writer.add_scalar('train_loss', loss, global_step=epoch)
-        print(f'epoch number: {epoch+1}, MSE Loss: {loss.data}')
+        print(f'epoch number: {epoch+1}, NLL Loss: {loss.data}')
         
         if epoch % 100 == 0:
             val_y_preds = model(X_val)
@@ -92,21 +92,20 @@ def predict_with_uncertainty(models, x):
         y_mean: The expected value of our prediction
         y_std: The standard deviation of our prediction
     '''
-    mus_arr = []
-    sigs_arr = []
-
-    x = x.reshape()
+    mu_arr = []
+    sig_arr = []
 
     for model in models:
         y_pred = model(x)
+        y_pred = y_pred.detach().numpy()
         mu = y_pred[:, 0]
         si = y_pred[:, 1]
 
-        mus_arr.append(mu)
-        sigs_arr.append(si)
+        mu_arr.append(mu)
+        sig_arr.append(si)
 
     mu_arr = np.array(mu_arr)
-    si_arr = np.array(si_arr)
+    si_arr = np.array(sig_arr)
     var_arr = np.exp(si_arr)
 
     y_mean = np.mean(mu_arr, axis=0)

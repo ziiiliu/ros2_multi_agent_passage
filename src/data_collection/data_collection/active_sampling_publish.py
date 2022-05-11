@@ -12,7 +12,7 @@ from rclpy.node import Node
 from geometry_msgs.msg import Twist, Vector3
 from freyja_msgs.msg import ReferenceState, CurrentState
 
-from utils import train_differential, predict_with_uncertainty, train_val_test_split, load_initial_models
+from .utils import train_differential, predict_with_uncertainty, train_val_test_split, load_initial_models
 
 max_vel = 1
 max_angle = 1
@@ -45,7 +45,7 @@ class ActivePublisher2D(Node):
         # The period of uncertainty evaluations
         self.eval_period = 50000
         # The period between active sampling
-        self.active_sample_period = 50000
+        self.active_sample_period = 500
         #
         self.cur_samples = []
         #
@@ -54,13 +54,16 @@ class ActivePublisher2D(Node):
         
         # Initialise the models
         self.models = load_initial_models(ensemble_size=5)
+        # Initialising sampling distributions
+        self.x_prob_dist_inv = None
+        self.y_prob_dist_inv = None
 
     # Checking whether the passed reference velocities will cause a clash with the "walls"
     # with separation of self.bound_len * 2
 
     def will_collide(self, vel, pos, dt):
 
-        return pos[0] + vel * dt > self.bound_len or pos[0] + vel * dt < - self.bound_len
+        return pos + vel * dt > self.bound_len or pos + vel * dt < - self.bound_len
 
     def _avoid_collision(self, x_vel, y_vel, pos, dt):
         if self.will_collide(x_vel, pos[0], dt):
@@ -84,6 +87,8 @@ class ActivePublisher2D(Node):
         self.cur_pos = cur_state_msg.state_vector[:3]
         self.cur_vel = cur_state_msg.state_vector[4:6]
         self.cur_samples.append(self.cur_vel)
+        self.x_vels.append(self.x_vel)
+        self.y_vels.append(self.y_vel)
 
     def timer_callback(self):
         if self.j >= self.active_sample_period:
@@ -97,16 +102,17 @@ class ActivePublisher2D(Node):
             # reset counter and threshold
             self.i = 0
             self.rand_interval = self.set_rand_interval()
-
-            x_vel_ind = np.random.choice(range(len(self.x_prob_dist_inv)), p=self.x_prob_dist_inv)
-            self.x_vel = self.x_bins[x_vel_ind] + np.random.random() * self.bin_size
-            y_vel_ind = np.random.choice(range(len(self.y_prob_dist_inv)), p=self.y_prob_dist_inv)
-            self.y_vel = self.y_bins[y_vel_ind] + np.random.random() * self.bin_size
+            if self.x_prob_dist_inv is not None:
+                x_vel_ind = np.random.choice(range(len(self.x_prob_dist_inv)), p=self.x_prob_dist_inv)
+                self.x_vel = self.x_bins[x_vel_ind] + np.random.random() * self.bin_size
+                y_vel_ind = np.random.choice(range(len(self.y_prob_dist_inv)), p=self.y_prob_dist_inv)
+                self.y_vel = self.y_bins[y_vel_ind] + np.random.random() * self.bin_size
+            else:
+                self.x_vel = random.uniform(-max_vel, max_vel)
+                self.y_vel = random.uniform(-max_vel, max_vel)
 
             self.x_vel, self.y_vel = self._avoid_collision(self.x_vel, self.y_vel, self.cur_pos, dt=self.rand_interval*self.timer_period)
             # x_vel=0.2
-            self.x_vels.append(self.x_vel)
-            self.y_vels.append(self.y_vel)
             
             msg = ReferenceState(vn=self.x_vel, ve=self.y_vel)
             self.publisher_.publish(msg)
@@ -114,6 +120,7 @@ class ActivePublisher2D(Node):
 
         else:
             self.i += 1
+        self.j += 1
 
     def reset_vel(self):
         stop_msg = ReferenceState()
@@ -128,29 +135,36 @@ class ActivePublisher2D(Node):
             raise ValueError("Distribution type unknown")
 
     def sample_points_from_bins(self, bins, ref_sample, samples_per_bin=3):
-        points = np.zeros((len(bins), samples_per_bin), input_dim)
+        points = np.zeros((len(bins), samples_per_bin, input_dim))
         for i in range(len(bins)):
-            for j in samples_per_bin:
+            for j in range(samples_per_bin):
                 points[i, j, 0] = bins[i] + np.random.random() * self.bin_size
                 points[i, j, 1] = ref_sample
         return points
 
     def active_sample(self, cur_samples, ref_samples, models, num_bins=100, max_val=1, input_ind=None, plot=False):
 
+        self.get_logger().info("Active sampling invoked, x_inv: %s" % self.x_prob_dist_inv)
         bins = np.linspace(-max_val, max_val, num_bins)
+        self.bin_size = bins[1] - bins[0]
         data_size = len(cur_samples)
-        
-        X = torch.cat([cur_samples[lag_offset:, input_ind], ref_samples[:data_size-lag_offset, input_ind]], axis=1)[:-1]
+        cur_samples = torch.Tensor(cur_samples)
+        ref_samples = torch.Tensor(ref_samples).unsqueeze(1)
+        self.get_logger().info("Shapes: %s %s" % (cur_samples.shape, ref_samples.shape))
+        X = torch.cat([cur_samples[lag_offset:, input_ind].unsqueeze(1), ref_samples[:data_size-lag_offset]], axis=1)[:-1]
         y = torch.diff(cur_samples[lag_offset:, input_ind], dim=0)[n_visible-1:]
         X_train, X_val, X_test, y_train, y_val, y_test = train_val_test_split(X, y)
 
-        for model in models:
-            train_differential(model, X, y, X_val, y_val)
+        for i, model in enumerate(models):
+            self.get_logger().info("Training model No. %s" % i)
+            train_differential(model, X_train, y_train, X_val, y_val, epochs=100)
 
         sampled_points = self.sample_points_from_bins(bins, ref_samples[-1])
         sampled_points = sampled_points.reshape(len(bins) * self.samples_per_bin, input_dim)
+        sampled_points = torch.Tensor(sampled_points)
         y_mean_all, y_std_all = predict_with_uncertainty(models, sampled_points)
-        y_uncertainty = y_std_all.reshape(len(bins), self.samples_per_bin)
+        y_uncertainty = np.mean(y_std_all.reshape(len(bins), self.samples_per_bin), axis=1)
+        self.get_logger().info("Uncertainty shape: %s " % y_uncertainty.shape)
         new_distribution = y_uncertainty/sum(y_uncertainty)
 
         return bins, new_distribution
