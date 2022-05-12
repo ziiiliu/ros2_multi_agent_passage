@@ -36,7 +36,7 @@ class ActivePublisher2D(Node):
         self.x_vel, self.y_vel = random.uniform(-max_vel, max_vel), random.uniform(-max_vel, max_vel)
         
         self.z_angle = random.uniform(-max_vel, max_vel)
-        self.bound_len = 3
+        self.bound_len = 1.5
 
         # Needs to change this when the starting position is far different.
         self.cur_pos = [2,-2, 0]
@@ -45,7 +45,7 @@ class ActivePublisher2D(Node):
         # The period of uncertainty evaluations
         self.eval_period = 50000
         # The period between active sampling
-        self.active_sample_period = 500
+        self.active_sample_period = 1000
         #
         self.cur_samples = []
         #
@@ -164,8 +164,8 @@ class ActivePublisher2D(Node):
         sampled_points = torch.Tensor(sampled_points)
         y_mean_all, y_std_all = predict_with_uncertainty(models, sampled_points)
         y_uncertainty = np.mean(y_std_all.reshape(len(bins), self.samples_per_bin), axis=1)
-        self.get_logger().info("Uncertainty shape: %s " % y_uncertainty.shape)
         new_distribution = y_uncertainty/sum(y_uncertainty)
+        self.get_logger().info("New Distribution: %s" % new_distribution)
 
         return bins, new_distribution
 

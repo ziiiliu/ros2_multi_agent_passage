@@ -28,7 +28,7 @@ class InversePublisher2D(Node):
 
         self.x_vel = random.uniform(-max_vel, max_vel)
         self.z_angle = random.uniform(-max_vel, max_vel)
-        self.bound_len = 3
+        self.bound_len = 1.5
         self.inverse_sample_period = 1000
 
         # Needs to change this when the starting position is far different.
